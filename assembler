@@ -1,0 +1,87 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <unordered_map>
+#include <bitset>
+#include <vector>
+
+using namespace std;
+
+unordered_map<string, string> opcodeTable = {
+    {"ADD", "000000"}, {"SUB", "000001"}, {"AND", "000010"}, {"OR", "000011"},
+    {"LW", "001000"}, {"SW", "001001"}, {"BEQ", "001010"},
+    {"J", "001100"}, {"JAL", "001101"}, {"JR", "001110"},
+    {"ADDI", "001011"}, {"ANDI", "001100"}, {"ORI", "001101"},
+    {"SLT", "001110"}, {"SLTI", "001111"}
+};
+
+string getRegisterBinary(string reg) {
+    if (reg[0] == 'R') reg = reg.substr(1);
+    return bitset<5>(stoi(reg)).to_string();
+}
+
+string parseRType(string opcode, vector<string> parts) {
+    string rs = getRegisterBinary(parts[2]);
+    string rt = getRegisterBinary(parts[3]);
+    string rd = getRegisterBinary(parts[1]);
+    string shamt = "00000";
+    string funct = opcodeTable[opcode];
+    return opcodeTable["ADD"] + rs + rt + rd + shamt + funct;
+}
+
+string parseIType(string opcode, vector<string> parts) {
+    string rs = getRegisterBinary(parts[2]);
+    string rt = getRegisterBinary(parts[1]);
+    string imm = bitset<16>(stoi(parts[3])).to_string();
+    return opcodeTable[opcode] + rs + rt + imm;
+}
+
+string parseJType(string opcode, vector<string> parts) {
+    string addr = bitset<26>(stoi(parts[1])).to_string();
+    return opcodeTable[opcode] + addr;
+}
+
+vector<string> split(string line) {
+    stringstream ss(line);
+    string token;
+    vector<string> parts;
+    while (ss >> token) {
+        if (token.back() == ',') token.pop_back();
+        parts.push_back(token);
+    }
+    return parts;
+}
+
+int main() {
+    ifstream infile("input.asm");
+    ofstream outfile("no_address.bin");
+    string line;
+
+    while (getline(infile, line)) {
+        vector<string> parts = split(line);
+        if (parts.empty()) continue;
+
+        string opcode = parts[0];
+        string binary = "";
+
+        if (opcodeTable.find(opcode) == opcodeTable.end()) {
+            cerr << "Unknown instruction: " << opcode << endl;
+            continue;
+        }
+
+        if (opcode == "J" || opcode == "JAL") {
+            binary = parseJType(opcode, parts);
+        } else if (opcode == "LW" || opcode == "SW" || opcode == "BEQ" || opcode == "ADDI" || opcode == "ANDI" || opcode == "ORI" || opcode == "SLTI") {
+            binary = parseIType(opcode, parts);
+        } else {
+            binary = parseRType(opcode, parts);
+        }
+
+        outfile << binary << endl;
+    }
+
+    infile.close();
+    outfile.close();
+    cout << "Assembler finished. Output written to no_address.bin" << endl;
+    return 0;
+}
