@@ -46,6 +46,7 @@ i_type_instructions = {
     "lw": "100011", "sw": "101011",
     "lb": "100000", "lbu": "100100", "lh": "100001", "lhu": "100101",
     "sb": "101000", "sh": "101001",
+    "blez": "000110",  # <-- ADDED BLEZ
 }
 
 # J-Type instructions: mnemonic -> opcode
@@ -64,44 +65,67 @@ def decimal_to_binary(n, bits):
     """Converts a decimal integer n to a binary string of 'bits' bits."""
     if isinstance(n, str): # Handle hex strings like '0x100'
         try:
-            n = int(n, 0) # Automatically detect base (e.g., 0x for hex)
+            # Allow labels to be passed if they are already resolved numbers, else handle later
+            if n in symbol_table:
+                 n = symbol_table[n] # Use resolved address if it's a label
+            else:
+                 n = int(n, 0) # Try to parse as number (handles dec/hex/oct)
         except ValueError:
-            raise ValueError(f"Invalid immediate value: {n}")
+            raise ValueError(f"Invalid immediate value or unresolved label: {n}")
+        except KeyError:
+             raise ValueError(f"Undefined label used as immediate: {n}")
+
+    if not isinstance(n, int): # Ensure we have an integer after potential label lookup
+        raise ValueError(f"Cannot convert non-integer value to binary: {n}")
 
     if n >= 0:
         # Positive number or zero
         s = bin(n)[2:] # Remove '0b' prefix
         if len(s) > bits:
-            raise ValueError(f"Value {n} too large for {bits} bits")
+            # Allow truncation for jump addresses (handled specifically later)
+            if bits != 26:
+                print(f"Warning: Value {n} (0x{n:x}) truncated to fit {bits} bits.", file=sys.stderr)
+            return s[-bits:].zfill(bits) # Take lower bits and pad
         return s.zfill(bits) # Pad with leading zeros
     else:
         # Negative number (two's complement)
-        # Calculate 2's complement for 'bits' length
         # Check if the negative number is representable
-        if n < -(2**(bits-1)):
-             raise ValueError(f"Value {n} too small for {bits} bits (signed)")
+        min_val = -(2**(bits-1))
+        max_val = (2**(bits-1)) - 1
+        if n < min_val :
+             raise ValueError(f"Value {n} too small for {bits} bits (signed, range {min_val} to {max_val})")
         # Compute the positive equivalent in 2's complement
         val = (1 << bits) + n
         s = bin(val)[2:]
-        if len(s) > bits: # Should not happen if range check is correct, but safety
-             return s[-bits:] # Take lower bits if overflow somehow occured
+        # Return the correct number of bits, zfilled if needed
         return s.zfill(bits)
 
 
 def parse_operands(ops_str):
     """Parses comma-separated operands, handling imm(reg) format."""
+    # --- MODIFIED ---
+    if not ops_str or ops_str.isspace(): # If the string is None, empty or only whitespace
+        return []           # Return an empty list immediately
+    # --- END MODIFIED ---
+
     ops = []
     # Regex to handle 'imm(reg)' format correctly without splitting imm
     # It splits by comma, unless the comma is inside parentheses
     for part in re.split(r",\s*(?![^()]*\))", ops_str):
-        ops.append(part.strip())
+        cleaned_part = part.strip()
+        if cleaned_part: # Avoid adding empty strings if there are trailing commas etc.
+            ops.append(cleaned_part)
     return ops
 
 def parse_mem_operand(op):
     """Parses 'imm(reg)' or 'label(reg)' format, returns (imm/label, reg)."""
-    match = re.match(r"([\w\d.-]+)\s*\(\s*(\$\w+)\s*\)", op) # Allow hex/decimal immediate
+    match = re.match(r"([\w\d_.-]+)\s*\(\s*(\$\w+|\$\d+)\s*\)", op) # Allow hex/decimal/labels in immediate, numeric registers
     if match:
         return match.group(1), match.group(2)
+    # Handle case where offset is missing -> assume 0
+    match_no_offset = re.match(r"\(\s*(\$\w+|\$\d+)\s*\)", op)
+    if match_no_offset:
+        return "0", match_no_offset.group(1) # Return offset 0
     # Maybe just a label (for la pseudo-instruction)
     if op in symbol_table:
         return op, None
@@ -118,9 +142,13 @@ in_text_section = True # Start in .text by default
 
 def pass_one(lines):
     """First pass: build symbol table and calculate addresses."""
-    global current_address, in_text_section, base_address_text
+    global current_address, in_text_section, base_address_text, symbol_table, data_symbol_table
+    # Reset global state for potentially multiple runs
+    symbol_table = {}
+    data_symbol_table = {}
     pc = base_address_text # Program counter simulation for text segment
     data_pc = base_address_data # Address counter for data segment
+    in_text_section = True
 
     print("--- Pass One: Building Symbol Table ---")
     for line_num, line in enumerate(lines, 1):
@@ -129,120 +157,115 @@ def pass_one(lines):
             continue # Skip empty lines and comments
 
         # Check for section directives first
-        if cleaned == ".data":
+        if cleaned.lower() == ".data": # Make directive check case-insensitive
             in_text_section = False
             print(f"  Line {line_num}: Switched to .data section")
             continue
-        elif cleaned == ".text":
+        elif cleaned.lower() == ".text": # Make directive check case-insensitive
             in_text_section = True
             current_address = pc # Track address in text segment
             print(f"  Line {line_num}: Switched to .text section")
             continue
 
-        # Check for labels
-        match = re.match(r"^\s*(\w+):\s*(.*)", cleaned)
+        # Check for labels (handle labels ending with :)
+        match = re.match(r"^\s*([a-zA-Z_]\w*):\s*(.*)", cleaned) # More robust label regex
         label = None
         instruction_part = cleaned
         if match:
             label = match.group(1)
             instruction_part = match.group(2).strip()
-            if not instruction_part and not in_text_section:
-                 # Label definition without data directive on same line (e.g., label:\n .word 0)
-                 # Store the address, but don't advance data_pc yet.
-                 if label in symbol_table or label in data_symbol_table:
-                     print(f"Error line {line_num}: Label '{label}' already defined.", file=sys.stderr)
-                     # Decide how to handle error, maybe exit later
-                 if in_text_section:
-                     symbol_table[label] = pc
-                     print(f"  Line {line_num}: Found text label '{label}' at address 0x{pc:08x}")
-                 else:
-                     data_symbol_table[label] = data_pc
-                     print(f"  Line {line_num}: Found data label '{label}' at address 0x{data_pc:08x}")
-                 continue # Don't process rest of line if only label def
-            elif label:
-                 # Label definition on same line as instruction/directive
-                 if label in symbol_table or label in data_symbol_table:
-                     print(f"Error line {line_num}: Label '{label}' already defined.", file=sys.stderr)
-                 if in_text_section:
-                     symbol_table[label] = pc
-                     print(f"  Line {line_num}: Found text label '{label}' at address 0x{pc:08x}")
-                 else:
-                     data_symbol_table[label] = data_pc
-                     print(f"  Line {line_num}: Found data label '{label}' at address 0x{data_pc:08x}")
+
+            # --- Label Definition Handling ---
+            current_label_addr = data_pc if not in_text_section else pc
+            if label in symbol_table or label in data_symbol_table:
+                print(f"Error line {line_num}: Label '{label}' already defined.", file=sys.stderr)
+                # Continue processing but this is an error state
+            else:
+                if in_text_section:
+                    symbol_table[label] = current_label_addr
+                    print(f"  Line {line_num}: Found text label '{label}' at address 0x{current_label_addr:08x}")
+                else:
+                    data_symbol_table[label] = current_label_addr
+                    print(f"  Line {line_num}: Found data label '{label}' at address 0x{current_label_addr:08x}")
+            # --- End Label Definition Handling ---
 
 
         if not instruction_part:
              continue # Skip lines with only labels
 
-        # Process based on section
+        # Process based on section to calculate addresses
+        parts = instruction_part.split(None, 1)
+        opcode_or_directive = parts[0].lower()
+        args_str = parts[1] if len(parts) > 1 else ""
+
         if in_text_section:
             # Simulate PC increment for instructions in text section
-            parts = instruction_part.split(None, 1)
-            opcode = parts[0].lower()
             # Handle pseudo-instructions that expand to multiple instructions
-            if opcode == "li":
-                pc += 8 # lui + ori
-            elif opcode == "la":
-                 pc += 8 # lui + ori
-            elif opcode == "move":
+            if opcode_or_directive == "li":
+                 # Check immediate size - might only need one instruction (ori)
+                 # This requires parsing the immediate value here, which is complex for pass 1
+                 # Simplification: Assume worst case (lui+ori) for address calculation
+                 pc += 8
+            elif opcode_or_directive == "la":
+                 pc += 8 # lui + ori (or lui + move)
+            elif opcode_or_directive == "move":
                  pc += 4 # Usually one 'addu'
-            elif opcode in r_type_instructions or \
-                 opcode in i_type_instructions or \
-                 opcode in j_type_instructions:
+            elif opcode_or_directive == "nop":
+                 pc += 4 # Represents one instruction
+            elif opcode_or_directive in r_type_instructions or \
+                 opcode_or_directive in i_type_instructions or \
+                 opcode_or_directive in j_type_instructions:
                 pc += 4 # Most instructions take 4 bytes
             else:
-                 # Could be a directive within .text, ignore for PC calc or handle if needed
-                 # Or could be an error (unknown instruction) - will be caught in pass two
+                 # Unknown instruction or directive in .text, ignore for PC calc
+                 # Error will be caught in pass two
                  pass
-            current_address = pc # Keep track for potential relative branches
         else:
             # Handle data directives in data section to advance data_pc
-            parts = instruction_part.split(None, 1)
-            directive = parts[0].lower()
-            args_str = parts[1] if len(parts) > 1 else ""
-            if directive == ".word":
+            if opcode_or_directive == ".word":
                 num_words = len(args_str.split(','))
                 data_pc += 4 * num_words
-                print(f"  Line {line_num}: Found .word directive, size {4 * num_words}, next data addr 0x{data_pc:08x}")
-            elif directive == ".space":
+                # print(f"  Line {line_num}: Found .word directive, size {4 * num_words}, next data addr 0x{data_pc:08x}")
+            elif opcode_or_directive == ".space":
                 try:
                     size = int(args_str.strip())
                     data_pc += size
-                    print(f"  Line {line_num}: Found .space directive, size {size}, next data addr 0x{data_pc:08x}")
+                    # print(f"  Line {line_num}: Found .space directive, size {size}, next data addr 0x{data_pc:08x}")
                 except ValueError:
                      print(f"Error line {line_num}: Invalid size for .space: {args_str}", file=sys.stderr)
-            elif directive == ".asciiz":
+            elif opcode_or_directive == ".asciiz":
                 match_str = re.search(r'"(.*)"', args_str)
                 if match_str:
-                    size = len(match_str.group(1).encode('ascii').decode('unicode_escape')) + 1 # +1 for null terminator
+                    # Handle escaped quotes correctly if needed, basic version:
+                    processed_string = match_str.group(1).encode('utf-8').decode('unicode_escape')
+                    size = len(processed_string) + 1 # +1 for null terminator
                     data_pc += size
-                    print(f"  Line {line_num}: Found .asciiz directive, size {size}, next data addr 0x{data_pc:08x}")
+                    # print(f"  Line {line_num}: Found .asciiz directive, size {size}, next data addr 0x{data_pc:08x}")
                 else:
                      print(f"Error line {line_num}: Invalid string for .asciiz: {args_str}", file=sys.stderr)
-            elif directive == ".ascii":
+            elif opcode_or_directive == ".ascii":
                  match_str = re.search(r'"(.*)"', args_str)
                  if match_str:
-                     size = len(match_str.group(1).encode('ascii').decode('unicode_escape'))
+                     processed_string = match_str.group(1).encode('utf-8').decode('unicode_escape')
+                     size = len(processed_string)
                      data_pc += size
-                     print(f"  Line {line_num}: Found .ascii directive, size {size}, next data addr 0x{data_pc:08x}")
+                    # print(f"  Line {line_num}: Found .ascii directive, size {size}, next data addr 0x{data_pc:08x}")
                  else:
                      print(f"Error line {line_num}: Invalid string for .ascii: {args_str}", file=sys.stderr)
-            elif directive == ".byte":
+            elif opcode_or_directive == ".byte":
                  num_bytes = len(args_str.split(','))
                  data_pc += num_bytes
-                 print(f"  Line {line_num}: Found .byte directive, size {num_bytes}, next data addr 0x{data_pc:08x}")
-            elif directive == ".align":
-                 # Simple alignment for now
+                 # print(f"  Line {line_num}: Found .byte directive, size {num_bytes}, next data addr 0x{data_pc:08x}")
+            elif opcode_or_directive == ".align":
                  try:
                      align_val = int(args_str.strip())
+                     if align_val < 0: raise ValueError("Alignment must be non-negative")
                      align_bytes = 2**align_val
                      offset = (align_bytes - (data_pc % align_bytes)) % align_bytes
                      data_pc += offset
-                     print(f"  Line {line_num}: Found .align directive {align_val}, adding {offset} bytes, next data addr 0x{data_pc:08x}")
-                 except ValueError:
-                      print(f"Error line {line_num}: Invalid value for .align: {args_str}", file=sys.stderr)
-
-
+                     # print(f"  Line {line_num}: Found .align directive {align_val}, adding {offset} bytes, next data addr 0x{data_pc:08x}")
+                 except ValueError as e:
+                      print(f"Error line {line_num}: Invalid value for .align: {args_str} ({e})", file=sys.stderr)
             # Add other data directives (.byte, .half, .float, .double, .align) if needed
 
     print(f"--- Pass One Complete. Final text PC: 0x{pc:08x}, Final data PC: 0x{data_pc:08x} ---")
@@ -258,6 +281,7 @@ def pass_two(lines):
     machine_code = []
     current_address = base_address_text # Reset for pass two address calculation
     in_text_section = True # Assume starting in .text
+    error_occurred = False # Flag to track errors
 
     print("\n--- Pass Two: Generating Machine Code ---")
     for line_num, line in enumerate(lines, 1):
@@ -265,265 +289,259 @@ def pass_two(lines):
         if not cleaned:
             continue
 
-        if cleaned == ".data":
+        if cleaned.lower() == ".data": # Make directive check case-insensitive
             in_text_section = False
             continue
-        elif cleaned == ".text":
+        elif cleaned.lower() == ".text": # Make directive check case-insensitive
             in_text_section = True
-            # current_address should already be correct from Pass 1 simulation if only labels follow
-            # Re-sync if necessary, though usually handled by tracking instructions
+            # We need to find the *actual* address of the first instruction after .text
+            # This requires slightly smarter pass 1 or lookahead, but for now, assume
+            # current_address tracking is roughly correct if code follows immediately.
+            # A better approach would store addresses per line in pass 1.
             continue
 
         if not in_text_section:
             continue # Only assemble .text section
 
         # Strip label definitions for instruction parsing
-        instruction_part = re.sub(r"^\s*\w+:\s*", "", cleaned).strip()
+        instruction_part = re.sub(r"^\s*[a-zA-Z_]\w*:\s*", "", cleaned).strip() # Use same robust regex
         if not instruction_part:
             continue # Skip lines with only labels
+
+        # Get the address assigned in Pass 1 if possible, otherwise use tracked address
+        # Simple tracking for now: instr_address is the address before processing this line
+        instr_address = current_address
 
         parts = instruction_part.split(None, 1)
         opcode_mnem = parts[0].lower()
         ops_str = parts[1] if len(parts) > 1 else ""
-        operands = parse_operands(ops_str)
+
+        # Handle parsing operands after getting the mnemonic
+        try:
+             operands = parse_operands(ops_str)
+        except Exception as e:
+             print(f"Error parsing operands line {line_num} ('{instruction_part}'): {e}", file=sys.stderr)
+             error_occurred = True
+             current_address += 4 # Assume error takes space to avoid address cascade
+             continue # Skip assembly for this line
 
         binary_instr = None
-        instr_address = current_address # Address of the *current* instruction being assembled
+        instrs_generated = 0 # How many instructions were generated for this line
 
         try:
+            # --- Handle NOP first as it's special ---
+            if opcode_mnem == "nop":
+                if len(operands) != 0: raise ValueError("nop takes 0 operands")
+                # nop is sll $zero, $zero, 0
+                binary_instr = "00000000000000000000000000000000"
+                instrs_generated = 1
+
             # R-Type
-            if opcode_mnem in r_type_instructions:
+            elif opcode_mnem in r_type_instructions:
                 funct = r_type_instructions[opcode_mnem]
                 rs, rt, rd, shamt = "00000", "00000", "00000", "00000"
                 opcode = "000000"
 
                 if opcode_mnem in ["add", "addu", "sub", "subu", "and", "or", "xor", "nor", "slt", "sltu"]:
-                    # Format: op $rd, $rs, $rt
                     if len(operands) != 3: raise ValueError("Expected 3 operands (rd, rs, rt)")
                     rd = registers[operands[0]]
                     rs = registers[operands[1]]
                     rt = registers[operands[2]]
                 elif opcode_mnem in ["sll", "srl", "sra"]:
-                    # Format: op $rd, $rt, shamt
-                    if len(operands) != 3: raise ValueError("Expected 3 operands (rd, rt, shamt)")
-                    rd = registers[operands[0]]
-                    rt = registers[operands[1]]
-                    shamt = decimal_to_binary(int(operands[2]), 5)
-                    rs = "00000" # rs is not used
+                    # Check if it's the specific NOP case (sll $0,$0,0)
+                    if opcode_mnem == "sll" and operands[0] in ["$zero", "$0"] and operands[1] in ["$zero", "$0"] and int(operands[2]) == 0:
+                         binary_instr = "00000000000000000000000000000000"
+                    else:
+                        if len(operands) != 3: raise ValueError("Expected 3 operands (rd, rt, shamt)")
+                        rd = registers[operands[0]]
+                        rt = registers[operands[1]]
+                        shamt = decimal_to_binary(int(operands[2]), 5)
+                        rs = "00000"
                 elif opcode_mnem == "jr":
-                    # Format: jr $rs
                     if len(operands) != 1: raise ValueError("Expected 1 operand (rs)")
                     rs = registers[operands[0]]
-                    rt, rd, shamt = "00000", "00000", "00000"
                 elif opcode_mnem == "jalr":
-                     # Format: jalr $rs OR jalr $rd, $rs
                      if len(operands) == 1:
                          rs = registers[operands[0]]
-                         rd = registers["$ra"] # Default $rd is $ra (31)
-                         rt = "00000"
+                         rd = registers["$ra"]
                      elif len(operands) == 2:
                          rd = registers[operands[0]]
                          rs = registers[operands[1]]
-                         rt = "00000"
                      else: raise ValueError("Expected 1 or 2 operands (rs) or (rd, rs)")
+                     rt = "00000"
                 elif opcode_mnem in ["mult", "multu", "div", "divu"]:
-                    # Format: op $rs, $rt
                     if len(operands) != 2: raise ValueError("Expected 2 operands (rs, rt)")
                     rs = registers[operands[0]]
                     rt = registers[operands[1]]
-                    rd, shamt = "00000", "00000"
                 elif opcode_mnem in ["mfhi", "mflo"]:
-                     # Format: op $rd
                      if len(operands) != 1: raise ValueError("Expected 1 operand (rd)")
                      rd = registers[operands[0]]
-                     rs, rt, shamt = "00000", "00000", "00000"
                 elif opcode_mnem == "syscall":
-                     if len(operands) != 0: raise ValueError("Expected 0 operands")
-                     # Specific format for syscall
-                     funct = "001100"
-                     rs = rt = rd = shamt = "00000"
-                     opcode = "000000" # Correct opcode
-                     binary_instr = f"{opcode}{rs}{rt}{rd}{shamt}{funct}" # Special case format
+                     # Check added by modifying parse_operands, just need to assemble
+                     if len(operands) != 0: raise ValueError(f"Syscall takes 0 operands, got {len(operands)}")
+                     # Correct format was already handled
+                     binary_instr = f"{opcode}{rs}{rt}{rd}{shamt}{funct}"
 
-                if binary_instr is None: # Avoid overwriting syscall
+                if binary_instr is None: # Assemble if not already done (e.g. syscall, specific sll)
                     binary_instr = f"{opcode}{rs}{rt}{rd}{shamt}{funct}"
+                instrs_generated = 1
 
             # I-Type
             elif opcode_mnem in i_type_instructions:
                 opcode = i_type_instructions[opcode_mnem]
-                rs, rt, imm = "00000", "00000", "0000000000000000"
+                rs, rt, imm_val_or_label = "00000", "00000", "0" # Default immediate
 
                 if opcode_mnem in ["addi", "addiu", "andi", "ori", "xori", "slti", "sltiu"]:
-                    # Format: op $rt, $rs, immediate
                     if len(operands) != 3: raise ValueError("Expected 3 operands (rt, rs, imm)")
                     rt = registers[operands[0]]
                     rs = registers[operands[1]]
-                    imm = decimal_to_binary(operands[2], 16)
+                    imm_val_or_label = operands[2]
+                    imm = decimal_to_binary(imm_val_or_label, 16)
                 elif opcode_mnem == "lui":
-                    # Format: lui $rt, immediate
                     if len(operands) != 2: raise ValueError("Expected 2 operands (rt, imm)")
                     rt = registers[operands[0]]
-                    imm = decimal_to_binary(operands[1], 16)
-                    rs = "00000" # rs is not used
+                    imm_val_or_label = operands[1]
+                    imm = decimal_to_binary(imm_val_or_label, 16)
                 elif opcode_mnem in ["lw", "sw", "lb", "lbu", "lh", "lhu", "sb", "sh"]:
-                    # Format: op $rt, offset($rs) or op $rt, label($rs)
                     if len(operands) != 2: raise ValueError("Expected 2 operands (rt, offset(rs))")
                     rt = registers[operands[0]]
                     offset_or_label, rs_reg = parse_mem_operand(operands[1])
                     rs = registers[rs_reg]
-                    # Check if offset_or_label is a data label
-                    if offset_or_label in data_symbol_table:
-                         # This assumes simple offset 0 from data label - LA handles full address
-                         # A more complex assembler might handle label + offset here
-                         # For basic lw/sw with labels, often use LA first then 0($reg)
-                         # If we allow 'lw $t0, mydata($zero)', need data address here.
-                         # Simplified: assume numeric offset or handle label error
-                         raise ValueError(f"Direct use of data label '{offset_or_label}' in lw/sw offset not supported (use 'la' first)")
-                    else:
-                         imm = decimal_to_binary(offset_or_label, 16) # Numeric offset
-                elif opcode_mnem in ["beq", "bne"]:
-                    # Format: op $rs, $rt, label
-                    if len(operands) != 3: raise ValueError("Expected 3 operands (rs, rt, label)")
+                    # We can resolve data labels here using the combined symbol table
+                    imm = decimal_to_binary(offset_or_label, 16) # Handles numbers, hex, or resolved labels
+                elif opcode_mnem in ["beq", "bne", "blez"]: # Added blez
+                    # Format: op $rs, $rt, label  OR  blez $rs, label
+                    expected_ops = 3 if opcode_mnem != "blez" else 2
+                    if len(operands) != expected_ops: raise ValueError(f"Expected {expected_ops} operands")
+
                     rs = registers[operands[0]]
-                    rt = registers[operands[1]]
-                    label = operands[2]
+                    # rt is 0 for blez, otherwise the second register
+                    rt = registers[operands[1]] if opcode_mnem != "blez" else "00000"
+                    label = operands[-1] # Label is always the last operand
+
                     if label not in symbol_table: raise ValueError(f"Label '{label}' not found")
                     target_addr = symbol_table[label]
-                    # PC-relative addressing: offset = (target_addr - (current_instr_addr + 4)) / 4
-                    offset = (target_addr - (instr_address + 4)) >> 2 # Use '>> 2' for / 4
+                    offset = (target_addr - (instr_address + 4)) >> 2
                     imm = decimal_to_binary(offset, 16)
-
+                # --- Construct final I-type instruction ---
                 binary_instr = f"{opcode}{rs}{rt}{imm}"
+                instrs_generated = 1
 
             # J-Type
             elif opcode_mnem in j_type_instructions:
                 opcode = j_type_instructions[opcode_mnem]
-                # Format: op label
                 if len(operands) != 1: raise ValueError("Expected 1 operand (label)")
                 label = operands[0]
                 if label not in symbol_table: raise ValueError(f"Label '{label}' not found")
                 target_addr = symbol_table[label]
-                # MIPS address is upper 4 bits of PC | (target_addr / 4) | 00
-                # We need the lower 26 bits of the target address, shifted right by 2 (divided by 4)
-                jump_target = (target_addr & 0x0FFFFFFF) >> 2 # Mask to be safe, shift
+                jump_target = (target_addr & 0x0FFFFFFF) >> 2
                 address = decimal_to_binary(jump_target, 26)
                 binary_instr = f"{opcode}{address}"
+                instrs_generated = 1
 
             # --- Pseudo-Instructions ---
             elif opcode_mnem == "move":
-                 # move $rt, $rs -> addu $rt, $rs, $zero
                  if len(operands) != 2: raise ValueError("Expected 2 operands (rt, rs)")
                  rt = registers[operands[0]]
                  rs = registers[operands[1]]
-                 rd = rt
-                 funct = r_type_instructions["addu"]
-                 shamt = "00000"
-                 binary_instr = f"000000{rs}{registers['$zero']}{rd}{shamt}{funct}"
+                 # addu $rt, $rs, $zero
+                 binary_instr = f"000000{rs}{registers['$zero']}{rt}00000{r_type_instructions['addu']}"
+                 instrs_generated = 1
 
             elif opcode_mnem == "li":
-                # li $rt, immediate
                 if len(operands) != 2: raise ValueError("Expected 2 operands (rt, immediate)")
                 rt = registers[operands[0]]
+                imm_text = operands[1]
                 try:
-                    imm_val = int(operands[1], 0) # Handle dec/hex immediate
-                except ValueError: raise ValueError(f"Invalid immediate value for li: {operands[1]}")
+                    imm_val = int(imm_text, 0) # Handles dec/hex/oct immediate
+                except ValueError: raise ValueError(f"Invalid immediate value for li: {imm_text}")
 
-                # If immediate fits in 16 bits (and is positive for ori), use single ori
-                # If it's negative or > 16 bits (signed), might need lui+ori
-                # Simplification: Always use lui + ori for 32-bit values
-                # Check if it fits in 16 bits unsigned for optimization (ori $rt, $zero, imm)
+                # Optimization: Use single ORI if possible
                 if 0 <= imm_val <= 0xFFFF:
-                     # Use: ori $rt, $zero, imm
                      opcode = i_type_instructions["ori"]
                      rs = registers["$zero"]
-                     imm_bin = decimal_to_binary(imm_val, 16)
-                     binary_instr = f"{opcode}{rs}{rt}{imm_bin}"
+                     imm = decimal_to_binary(imm_val, 16)
+                     binary_instr = f"{opcode}{rs}{rt}{imm}"
+                     instrs_generated = 1
                 else:
-                     # Use: lui $at, upper_16_bits
-                     #      ori $rt, $at, lower_16_bits
+                     # lui $at, upper_16_bits
+                     # ori $rt, $at, lower_16_bits
                      upper = (imm_val >> 16) & 0xFFFF
                      lower = imm_val & 0xFFFF
 
-                     # LUI instruction
                      opcode_lui = i_type_instructions["lui"]
-                     rs_lui = "00000"
-                     rt_lui = registers["$at"] # Use $at register
                      imm_lui = decimal_to_binary(upper, 16)
-                     instr1 = f"{opcode_lui}{rs_lui}{rt_lui}{imm_lui}"
-                     machine_code.append((instr_address, instr1)) # Add first instruction
+                     instr1 = f"{opcode_lui}00000{registers['$at']}{imm_lui}"
+                     machine_code.append((instr_address, instr1))
                      print(f"  Line {line_num} (li expansion): 0x{instr_address:08x} -> {instr1} (lui)")
-                     current_address += 4 # Increment PC for the LUI part
+                     instrs_generated = 1 # First instruction generated
 
-                     # ORI instruction
                      opcode_ori = i_type_instructions["ori"]
-                     rs_ori = registers["$at"] # Use $at from LUI
-                     # rt is the original target register
                      imm_ori = decimal_to_binary(lower, 16)
-                     binary_instr = f"{opcode_ori}{rs_ori}{rt}{imm_ori}"
-                     # The main loop will add this second instruction
+                     binary_instr = f"{opcode_ori}{registers['$at']}{rt}{imm_ori}"
+                     # This second instruction will be added below, and PC incremented
+                     instrs_generated = 2 # Second instruction will be generated
 
             elif opcode_mnem == "la":
-                # la $rt, label
                 if len(operands) != 2: raise ValueError("Expected 2 operands (rt, label)")
                 rt = registers[operands[0]]
                 label = operands[1]
                 if label not in symbol_table: raise ValueError(f"Label '{label}' not found")
-
                 addr = symbol_table[label]
                 upper = (addr >> 16) & 0xFFFF
                 lower = addr & 0xFFFF
 
-                # LUI $at, upper_16_bits
+                # lui $at, upper_16_bits
                 opcode_lui = i_type_instructions["lui"]
-                rs_lui = "00000"
-                rt_lui = registers["$at"]
                 imm_lui = decimal_to_binary(upper, 16)
-                instr1 = f"{opcode_lui}{rs_lui}{rt_lui}{imm_lui}"
+                instr1 = f"{opcode_lui}00000{registers['$at']}{imm_lui}"
                 machine_code.append((instr_address, instr1))
                 print(f"  Line {line_num} (la expansion): 0x{instr_address:08x} -> {instr1} (lui)")
-                current_address += 4
+                instrs_generated = 1
 
-                # ORI $rt, $at, lower_16_bits (only needed if lower bits are non-zero)
+                # ori $rt, $at, lower_16_bits (only needed if lower bits are non-zero)
                 if lower != 0:
                      opcode_ori = i_type_instructions["ori"]
-                     rs_ori = registers["$at"]
                      imm_ori = decimal_to_binary(lower, 16)
-                     binary_instr = f"{opcode_ori}{rs_ori}{rt}{imm_ori}"
-                else:
-                     # If lower is 0, the LUI result in $at is the final address
-                     # We need to move it to the target register $rt
-                     # Use: addu $rt, $at, $zero
-                     funct = r_type_instructions["addu"]
-                     shamt = "00000"
-                     binary_instr = f"000000{registers['$at']}{registers['$zero']}{rt}{shamt}{funct}"
+                     binary_instr = f"{opcode_ori}{registers['$at']}{rt}{imm_ori}"
+                else: # If lower is 0, use move (addu)
+                     binary_instr = f"000000{registers['$at']}{registers['$zero']}{rt}00000{r_type_instructions['addu']}"
+                instrs_generated = 2
 
-
-            # Add more pseudo-instructions here (blt, bgt, etc.) if needed
 
             else:
-                raise ValueError(f"Unknown instruction mnemonic: '{opcode_mnem}'")
+                # Check if it's a directive we should ignore in pass two
+                if not opcode_mnem.startswith('.'):
+                    raise ValueError(f"Unknown instruction mnemonic: '{opcode_mnem}'")
+                # Otherwise ignore directives like .text, .data in pass two
 
-            # If binary_instr was generated (and not handled by multi-instr pseudo-op)
-            if binary_instr:
+            # --- Add generated instruction(s) and update address ---
+            if binary_instr: # If this line produced a (possibly second) instruction
                  if len(binary_instr) != 32:
                      raise ValueError(f"Internal error: Generated instruction '{binary_instr}' is not 32 bits long!")
-                 machine_code.append((instr_address, binary_instr))
-                 print(f"  Line {line_num}: 0x{instr_address:08x} -> {binary_instr} ({opcode_mnem})")
+                 # Calculate the address for this specific instruction
+                 current_instr_final_addr = instr_address + (4 * (instrs_generated - 1))
+                 machine_code.append((current_instr_final_addr, binary_instr))
+                 print(f"  Line {line_num}: 0x{current_instr_final_addr:08x} -> {binary_instr} ({opcode_mnem})")
 
-            # Increment PC for the next instruction (handle multi-instruction pseudo-ops correctly)
-            # The increment logic is now primarily handled within the pseudo-instruction expansion
-            # Single instructions or the last part of a pseudo-instruction increment here.
-            if opcode_mnem not in ["li", "la"]: # These handle their own increments
-                 current_address += 4
-            elif opcode_mnem == "li" and (0 <= imm_val <= 0xFFFF): # Single ORI for li
-                 current_address += 4
-            # 'la' always takes 2 instructions (or move), handled above
+            # Increment address based on how many instructions were generated
+            if instrs_generated > 0:
+                current_address += (4 * instrs_generated)
+            # If 0 instructions (e.g., ignored directive), address doesn't change here
+
 
         except Exception as e:
             print(f"Error assembling line {line_num} ('{instruction_part}'): {e}", file=sys.stderr)
-            # Optionally: sys.exit(1) or collect errors and report at the end
+            error_occurred = True
+            # Try to advance PC anyway to avoid cascading address errors
+            # A better method would use line-number-to-address mapping from pass 1
+            current_address += 4 # Crude estimate
 
-    print("--- Pass Two Complete ---")
+
+    if error_occurred:
+        print("\n--- Pass Two Completed with Errors ---", file=sys.stderr)
+    else:
+        print("--- Pass Two Complete ---")
     return machine_code
 
 # --- Main Execution ---
@@ -547,30 +565,40 @@ if __name__ == "__main__":
     # Run Pass One
     pass_one(lines)
 
-    # Run Pass Two
+    # Run Pass Two only if Pass One seemed okay (e.g., symbol table has entries or no errors reported)
+    # Simple check: Did pass_one raise an exception? (More robust checks could be added)
     assembled_code = pass_two(lines)
 
-    # Write Output Files
-    try:
-        with open(output_bin_filename, 'w') as binfile:
-            for addr, code in assembled_code:
-                binfile.write(code + '\n')
-        print(f"\nBinary machine code written to '{output_bin_filename}'")
-    except IOError:
-        print(f"Error: Could not write to binary output file '{output_bin_filename}'.", file=sys.stderr)
-        sys.exit(1)
-
-    if output_hex_filename:
+    # Write Output Files only if assembly likely succeeded
+    if assembled_code: # Check if list is not empty (implies pass two ran without fatal errors early on)
         try:
-            with open(output_hex_filename, 'w') as hexfile:
+            with open(output_bin_filename, 'w') as binfile:
+                # Sort by address just in case pseudo-ops caused out-of-order insertion
+                assembled_code.sort(key=lambda item: item[0])
                 for addr, code in assembled_code:
-                    hex_code = f"{int(code, 2):08x}" # Convert binary string to hex
-                    hexfile.write(hex_code + '\n')
-            print(f"Hex machine code written to '{output_hex_filename}'")
+                    binfile.write(code + '\n')
+            print(f"\nBinary machine code written to '{output_bin_filename}'")
         except IOError:
-            print(f"Error: Could not write to hex output file '{output_hex_filename}'.", file=sys.stderr)
-        except ValueError:
-             print(f"Error: Could not convert binary code to hex.", file=sys.stderr)
+            print(f"Error: Could not write to binary output file '{output_bin_filename}'.", file=sys.stderr)
+            sys.exit(1)
 
+        if output_hex_filename:
+            try:
+                with open(output_hex_filename, 'w') as hexfile:
+                    # Sort by address again for hex output
+                    assembled_code.sort(key=lambda item: item[0])
+                    for addr, code in assembled_code:
+                        try:
+                            hex_code = f"{int(code, 2):08x}" # Convert binary string to hex
+                            hexfile.write(hex_code + '\n')
+                        except ValueError:
+                             print(f"Warning: Could not convert binary string '{code}' to hex. Skipping line.", file=sys.stderr)
 
-    print("\nAssembly complete.")
+                print(f"Hex machine code written to '{output_hex_filename}'")
+            except IOError:
+                print(f"Error: Could not write to hex output file '{output_hex_filename}'.", file=sys.stderr)
+
+        print("\nAssembly complete.")
+    else:
+        print("\nAssembly failed or produced no code. Output files not written.", file=sys.stderr)
+        sys.exit(1) # Exit with error status if assembly failed
