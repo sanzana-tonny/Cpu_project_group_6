@@ -1,0 +1,34 @@
+# Compile of adder.v was successful.
+# Compile of alu32.v was successful.
+# Compile of control.v was successful.
+# Compile of datapath.v was successful.
+# Compile of decoder4.v was successful.
+# Compile of flopr_param.v was successful.
+# Compile of MIPS_SCP.v was successful.
+# Compile of MIPS_SCP_tb.v was successful.
+# Compile of mux2.v was successful.
+# Compile of mux4.v was successful.
+# Compile of ram.v was successful.
+# Compile of regfile32.v was successful.
+# Compile of rom.v was successful.
+# Compile of signext.v was successful.
+# Compile of sl2.v was successful.
+# 15 compiles, 0 failed with no errors.
+vsim -gui work.MIPS_SCP_tb
+# vsim -gui work.MIPS_SCP_tb 
+# Start time: 03:51:13 on May 01,2025
+# Loading work.MIPS_SCP_tb
+# Loading work.MIPS_SCP
+# Loading work.Datapath
+# Loading work.flopr_param
+# Loading work.adder
+# Loading work.slt2
+# Loading work.mux2
+# Loading work.registerfile32
+# Loading work.alu32
+# Loading work.signext
+# Loading work.Controlunit
+# Loading work.ram
+# Loading work.rom
+# Loading work.FA
+run -all

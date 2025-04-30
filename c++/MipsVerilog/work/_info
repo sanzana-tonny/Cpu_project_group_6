@@ -1,0 +1,384 @@
+m255
+K4
+z2
+!s11f vlog 2020.1 2020.02, Feb 28 2020
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+dC:/intelFPGA/20.1
+vadder
+Z0 !s110 1746049848
+!i10b 1
+!s100 POdD8SeL7hLzOOf0@VaNZ2
+Z1 !s11b Dg1SIo80bB@j0V0VzS_@n1
+IRjjkiVk>]`EGOM8T?Ode?1
+Z2 VDg1SIo80bB@j0V0VzS_@n1
+Z3 dD:/project/MipsVerilog
+Z4 w1705214447
+Z5 8adder.v
+Z6 Fadder.v
+!i122 6
+L0 6 16
+Z7 OV;L;2020.1;71
+r1
+!s85 0
+31
+Z8 !s108 1746049847.000000
+Z9 !s107 control.v|rom.v|ram.v|sl2.v|signext.v|regfile32.v|mux4.v|mux2.v|flopr_param.v|alu32.v|adder.v|datapath.v|D:/project/MipsVerilog/MIPS_SCP.v|
+Z10 !s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/MIPS_SCP.v|
+!i113 1
+Z11 o-work work
+Z12 tCvgOpt 0
+valu32
+R0
+!i10b 1
+!s100 ]gY<PLG=LjDkAF_C<ITl=0
+R1
+I<jCzYWLD;ShUb=76XE]eg2
+R2
+R3
+w1704775379
+8alu32.v
+Falu32.v
+!i122 6
+L0 6 29
+R7
+r1
+!s85 0
+31
+R8
+R9
+R10
+!i113 1
+R11
+R12
+vControlunit
+R0
+!i10b 1
+!s100 fNPdh5mIPVU:XIbgcglSJ1
+R1
+IbBWYJ@K5SVd>L;NWAYkUn0
+R2
+R3
+w1732865114
+8control.v
+Fcontrol.v
+!i122 6
+L0 7 119
+R7
+r1
+!s85 0
+31
+R8
+R9
+R10
+!i113 1
+R11
+R12
+n@controlunit
+vDatapath
+R0
+!i10b 1
+!s100 K9Rzd`FgikV?RaOn=1bF=3
+R1
+I__RLB^BST?YiZ=04f]15n3
+R2
+R3
+w1705215384
+8datapath.v
+Fdatapath.v
+!i122 6
+L0 15 43
+R7
+r1
+!s85 0
+31
+R8
+R9
+R10
+!i113 1
+R11
+R12
+n@datapath
+vdecoder4
+!s110 1746049847
+!i10b 1
+!s100 k1PDc_jh3bdPICKz6AkfC2
+R1
+ILZ6XdW0km_I^7;WaT`>oi0
+R2
+R3
+w1704775437
+8D:/project/MipsVerilog/decoder4.v
+FD:/project/MipsVerilog/decoder4.v
+!i122 4
+L0 6 41
+R7
+r1
+!s85 0
+31
+R8
+!s107 D:/project/MipsVerilog/decoder4.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/decoder4.v|
+!i113 1
+R11
+R12
+vFA
+R0
+!i10b 1
+!s100 H=jfXY22PJTHJQJ3=4<L=2
+R1
+I85UW]EN8NCzgQbPOdB`<`3
+R2
+R3
+R4
+R5
+R6
+!i122 6
+L0 23 5
+R7
+r1
+!s85 0
+31
+R8
+R9
+R10
+!i113 1
+R11
+R12
+n@f@a
+vflopr_param
+R0
+!i10b 1
+!s100 ==fG^OPB_[hTIdMzE4P=z3
+R1
+IZ7MKT3J:[OAFdj59goeck1
+R2
+R3
+w1704775476
+8flopr_param.v
+Fflopr_param.v
+!i122 6
+L0 6 13
+R7
+r1
+!s85 0
+31
+R8
+R9
+R10
+!i113 1
+R11
+R12
+vMIPS_SCP
+R0
+!i10b 1
+!s100 N]D8[;N4JXOWdiVRLgVm50
+R1
+I=3K[h=RVHXO9Xz`=G7QW[3
+R2
+R3
+w1704775274
+8D:/project/MipsVerilog/MIPS_SCP.v
+FD:/project/MipsVerilog/MIPS_SCP.v
+!i122 6
+L0 11 21
+R7
+r1
+!s85 0
+31
+R8
+R9
+R10
+!i113 1
+R11
+R12
+n@m@i@p@s_@s@c@p
+vMIPS_SCP_tb
+R0
+!i10b 1
+!s100 jXmgakjYg:Zfm]M]nMYMT3
+R1
+IQV3;TWG5fUm_ERCM]FjSS2
+R2
+R3
+w1704792782
+8D:/project/MipsVerilog/MIPS_SCP_tb.v
+FD:/project/MipsVerilog/MIPS_SCP_tb.v
+!i122 7
+L0 6 28
+R7
+r1
+!s85 0
+31
+Z13 !s108 1746049848.000000
+!s107 D:/project/MipsVerilog/MIPS_SCP_tb.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/MIPS_SCP_tb.v|
+!i113 1
+R11
+R12
+n@m@i@p@s_@s@c@p_tb
+vmux2
+R0
+!i10b 1
+!s100 cKn3GS0^`?]:SEii3GNzJ1
+R1
+I=0dOTiIo_[?hJa8;hJo:<0
+R2
+R3
+w1704776184
+8D:/project/MipsVerilog/mux2.v
+FD:/project/MipsVerilog/mux2.v
+!i122 8
+L0 6 12
+R7
+r1
+!s85 0
+31
+R13
+!s107 D:/project/MipsVerilog/mux2.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/mux2.v|
+!i113 1
+R11
+R12
+vmux4
+R0
+!i10b 1
+!s100 K5ZiK[1HFMeGGATIz9djP2
+R1
+Ija=e4^4I0ddzWcKCg1inK3
+R2
+R3
+w1704775545
+8D:/project/MipsVerilog/mux4.v
+FD:/project/MipsVerilog/mux4.v
+!i122 9
+Z14 L0 6 20
+R7
+r1
+!s85 0
+31
+R13
+!s107 D:/project/MipsVerilog/mux4.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/mux4.v|
+!i113 1
+R11
+R12
+vram
+R0
+!i10b 1
+!s100 d164]T7az:jD<k@Q>@;ce2
+R1
+I22deWdRZFhPoXhOf>FbG02
+R2
+R3
+Z15 w1704776186
+8D:/project/MipsVerilog/ram.v
+FD:/project/MipsVerilog/ram.v
+!i122 10
+L0 5 24
+R7
+r1
+!s85 0
+31
+R13
+!s107 D:/project/MipsVerilog/ram.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/ram.v|
+!i113 1
+R11
+R12
+vregisterfile32
+Z16 !s110 1746049849
+!i10b 1
+!s100 UPaY0dJ8W7nOe;gZ1:dgo3
+R1
+ICCZOP5PJZGI`LeB`=5SYC0
+R2
+R3
+R15
+8D:/project/MipsVerilog/regfile32.v
+FD:/project/MipsVerilog/regfile32.v
+!i122 11
+L0 6 34
+R7
+r1
+!s85 0
+31
+Z17 !s108 1746049849.000000
+!s107 D:/project/MipsVerilog/regfile32.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/regfile32.v|
+!i113 1
+R11
+R12
+vrom
+R16
+!i10b 1
+!s100 YDcXZ`46Zc`ZYgiE4Mo_P3
+R1
+IMi27J`n;;TB]Bbe=Rmo142
+R2
+R3
+w1744098724
+8D:/project/MipsVerilog/rom.v
+FD:/project/MipsVerilog/rom.v
+!i122 12
+R14
+R7
+r1
+!s85 0
+31
+R17
+!s107 D:/project/MipsVerilog/rom.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/rom.v|
+!i113 1
+R11
+R12
+vsignext
+R16
+!i10b 1
+!s100 ]O6EBlmRCeeaS6VEg0jFT1
+R1
+I3BeQo]ek]6>=?YFe?@G9J3
+R2
+R3
+w1704775668
+8D:/project/MipsVerilog/signext.v
+FD:/project/MipsVerilog/signext.v
+!i122 13
+L0 6 7
+R7
+r1
+!s85 0
+31
+R17
+!s107 D:/project/MipsVerilog/signext.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/signext.v|
+!i113 1
+R11
+R12
+vslt2
+!s110 1746049851
+!i10b 1
+!s100 L`WcOzOS9d8K6WWdkoel<0
+R1
+IGRKc95CM8HN2R=TnV5Uj_0
+R2
+R3
+w1704775892
+8D:/project/MipsVerilog/sl2.v
+FD:/project/MipsVerilog/sl2.v
+!i122 14
+L0 6 6
+R7
+r1
+!s85 0
+31
+!s108 1746049850.000000
+!s107 D:/project/MipsVerilog/sl2.v|
+!s90 -reportprogress|300|-work|work|-stats=none|D:/project/MipsVerilog/sl2.v|
+!i113 1
+R11
+R12
